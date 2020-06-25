@@ -76,10 +76,6 @@ LIMIT ${limit}`;
   return pool.query(query, [guest_id])
     .then(res => res.rows)
     .catch(err => console.error(err));
-
-
-
-  // return getAllProperties(null, 2);
 };
 exports.getAllReservations = getAllReservations;
 
@@ -94,11 +90,56 @@ exports.getAllReservations = getAllReservations;
 
 
 const getAllProperties = function(options, limit = 10) {
-  return pool.query(`
-  SELECT * FROM properties
-  LIMIT $1
-  `, [limit])
-    .then(res => res.rows);
+  // 1 setup an array to hold any params that may be avail
+  const queryParams = [];
+  // 2 start the query with everything that comes before the where clause
+  let queryString = `
+  SELECT properties.*, avg(property_reviews.rating) as average_rating
+  FROM properties
+  JOIN property_reviews ON properties.id = property_id
+  `;
+
+  // 3 check if a city has been passed as an option, add the city to the params array and create a where clause
+  if (options.city) {
+    queryParams.push(`%${options.city}%`);
+    queryString += `WHERE city LIKE $${queryParams.length} `;
+  }
+
+  // check if an owner_id is passed, add the owner_id and update the where clause with an AND stmt
+  if (options.owner_id) {
+    queryParams.push(`%${options.owner_id}%`);
+    queryString += ` AND owner_id = $${queryParams.length}`;
+  }
+  
+  if (options.minimum_price_per_night || options.maximum_price_per_night) {
+    queryParams.push(parseInt(`${options.minimum_price_per_night * 100}`));
+    const minParam = queryParams.length;
+    queryParams.push(parseInt(`${options.maximum_price_per_night * 100}`));
+    const maxParam = queryParams.length;
+    queryString += ` AND cost_per_night BETWEEN $${minParam} AND $${maxParam}`;
+  }
+  
+  if (options.minimum_rating) {
+    queryParams.push(Number(options.minimum_rating));
+    queryString += ` AND rating >= $${queryParams.length}`;
+  }
+
+  // 4 add any query that comes after the where clause
+  queryParams.push(limit);
+  queryString += `
+  GROUP BY properties.id
+  ORDER BY cost_per_night
+  LIMIT $${queryParams.length};
+  `;
+
+  // 5 inspect output
+  console.log('queryString: ',queryString, 'queryParams', queryParams);
+
+  // 6 return the promise
+  return pool.query(queryString, queryParams)
+    .then(res => {
+      return res.rows;
+    });
 };
 exports.getAllProperties = getAllProperties;
 
